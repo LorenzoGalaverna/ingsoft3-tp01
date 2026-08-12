@@ -1,0 +1,44 @@
+// Habit Tracker — schema mínimo del walking skeleton (TP2).
+// Un solo usuario hardcodeado (id=1) — la autenticación llega en TPs posteriores.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int          @id @default(autoincrement())
+  name        String
+  xp          Int          @default(0)
+  level       Int          @default(1)
+  habits      Habit[]
+  completions Completion[]
+}
+
+model Habit {
+  id          Int          @id @default(autoincrement())
+  name        String
+  xpReward    Int          @default(10)
+  createdAt   DateTime     @default(now())
+  userId      Int
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completions Completion[]
+}
+
+// Un hábito puede ser completado múltiples veces, pero solo una vez por día
+// (índice único (habitId, dayKey)). El dayKey es "YYYY-MM-DD" calculado en la app.
+model Completion {
+  id          Int      @id @default(autoincrement())
+  habitId     Int
+  habit       Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completedAt DateTime @default(now())
+  dayKey      String   // YYYY-MM-DD — bloquea completar dos veces el mismo día
+
+  @@unique([habitId, dayKey])
+}
