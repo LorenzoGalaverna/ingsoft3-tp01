@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: habits              # crea la BD que espera DATABASE_URL
+    volumes:
+      - db_data:/var/lib/postgresql/data   # los datos SOBREVIVEN al contenedor
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    environment:
+      # 'db' es el nombre del servicio → resuelve por DNS interno de compose.
+      # DB_PASSWORD viene del .env (no commiteado).
+      DATABASE_URL: "postgresql://postgres:${DB_PASSWORD}@db:5432/habits"
+    ports:
+      - "8080:8080"                    # para curl/Postman; el browser entra por el 3000
+    depends_on:
+      db:
+        condition: service_healthy     # espera a que la BD esté LISTA, no solo iniciada
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:

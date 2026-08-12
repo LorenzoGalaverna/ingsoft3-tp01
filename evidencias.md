@@ -1,4 +1,10 @@
-# Evidencias — TP1
+# Evidencias — Historial acumulado del semestre
+
+Este archivo se acumula TP a TP: cada trabajo agrega su sección al final. Las capturas viejas quedan al principio y las nuevas abajo — así el crecimiento es visible en el historial.
+
+---
+
+# TP1 — Git colaborativo
 
 Las cuatro capturas marcadas 📸 en la guía, tomadas en el momento en que ocurrió cada hecho. Tres de las cuatro son irrepetibles: el aviso de conflicto y el editor con los marcadores dejan de existir en cuanto el conflicto se resuelve, y la release solo se publica una vez.
 
@@ -69,3 +75,62 @@ Esta captura es la más frágil de las cuatro, porque el paso inmediatamente sig
 Release `v1.0.0` con el badge **Latest**, apuntando al tag `v1.0.0` y al commit `a906376` — la punta de `main` después de mergear los tres PRs. Las notas explican qué incluye la versión y justifican por qué el número es `1.0.0` y no `0.1.0` (semver: primera versión estable y utilizable).
 
 El tag se creó **anotado** desde la máquina (`git tag -a v1.0.0 -m "..."` seguido de `git push origin v1.0.0`) y la release se publicó sobre ese tag ya existente. Un tag anotado es un objeto de Git con autor, fecha y mensaje propios (`fa0b8c6`); un tag liviano sería solo un puntero sin metadatos. Para marcar una entrega, el anotado es el que corresponde.
+
+---
+---
+
+# TP2 — Contenedores
+
+Cinco evidencias de que el sistema completo funciona en contenedores, incluyendo la prueba de persistencia (el corazón del TP2) y la prueba de que las imágenes publicadas en ghcr son suficientes para levantarlo todo — sin código local y sin credenciales.
+
+Las cinco imágenes de terminal contienen **salidas reales** capturadas al ejecutar los comandos (no mockups). El texto es literal — la envoltura visual solo agrupa lo que estaba disperso en el buffer del shell.
+
+---
+
+## 1. `docker compose up -d` desde cero
+
+![compose up -d](img/tp2-01-compose-up.png)
+
+Dos comandos: `cp .env.example .env` para el secreto local, y `docker compose up -d` para levantar todo. Compose crea la red interna, el volumen `db_data`, arranca `db`, **espera al healthcheck** (línea `Healthy` — no `Started`), y recién ahí arranca el backend y el frontend. `depends_on: condition: service_healthy` es lo que garantiza este orden: sin él, el backend arrancaría antes de que PostgreSQL acepte conexiones y crashearía.
+
+## 2. Sistema funcionando end-to-end (con las reglas del backend)
+
+![sistema end-to-end](img/tp2-02-e2e.png)
+
+Un flujo completo por HTTP: crear un hábito con `POST /api/habits`, completarlo con `POST /api/habits/:id/complete`, e **intentar completarlo dos veces** — la segunda cae en 409 con el mensaje `ya completaste este hábito hoy`. La regla no está en el código de arriba: está enforced en la base de datos como índice único `(habitId, dayKey)`. La última línea usa el endpoint via el nginx del frontend (`localhost:3000/api/user`) — mismo resultado, misma sesión, sin CORS.
+
+## 3. Prueba de persistencia: `down/up` conserva, `down -v/up` borra
+
+![persistencia](img/tp2-03-persistencia.png)
+
+El experimento canónico del TP2. Se crea un hábito → se apaga el compose (`down`, sin `-v`) → se prende otra vez → **el hábito sigue ahí** (el volumen sobrevivió al contenedor). Después `down -v` (borra el volumen) → `up -d` → array vacío. La conclusión es directa: los contenedores son efímeros, el estado vive en volúmenes; sin esa separación explícita, la base de datos perdería todo en cada recreación del contenedor.
+
+## 4. Tamaños de imagen — el punto del multi-stage
+
+![tamaños](img/tp2-04-tamanos.png)
+
+`habit-tracker-backend:v0.1.1` pesa 446 MB en disco (123 MB comprimido). Comparado con el base `node:22-alpine` (229 MB), el backend agrega ~200 MB de dependencias de producción + los engines nativos de Prisma. Sin multi-stage — con `node_modules` de dev incluidos (prisma CLI + tipos + linter + vitest) y sin `npm ci --omit=dev` — la imagen final habría cruzado los 700 MB. Ganancia por multi-stage: ~250 MB por imagen que no viajan al registry ni a los entornos.
+
+El frontend es todavía más elocuente: **el runtime no contiene Node**, solo nginx + los estáticos que Vite emitió — 92 MB en total, casi todo el `nginx:alpine` base. Es la razón por la que un frontend estático nunca debería viajar con su compilador puesto.
+
+## 5. Sistema levantado 100% desde ghcr — sin código, sin credenciales
+
+![desde ghcr](img/tp2-05-desde-ghcr.png)
+
+La prueba de fuego del `docker-compose.registry.yml`. Primero se limpia todo lo local (contenedores + imágenes construidas por compose + tags apuntando a ghcr + cache de build), después se hace `docker logout ghcr.io` para deslogarse del registry, y recién ahí se levanta con `-f docker-compose.registry.yml`.
+
+Docker baja las capas de ghcr **capa por capa** (visible en la consola), y los tres contenedores levantan como si nada. El `docker compose ps` de abajo confirma que las imágenes en uso son las de `ghcr.io/lorenzogalaverna/...:v0.1.1`, no las locales. Este es exactamente el flujo que va a usar el pipeline del TP7: la imagen se construye una vez y viaja por semver a todos los entornos.
+
+**Detalle interesante**: en la primera versión publicada (v0.1.0) este ejercicio falló porque la imagen tenía un bug con OpenSSL en Alpine que no se detectaba corriéndola con `build:` (Docker usaba la imagen local recién rebuildeada con el fix, no la del registry). El bug apareció al bajarla anónimamente. Es la prueba concreta de que **la única validación real de una imagen publicada es correrla desde el registry**, no confiar en la caché local. Se resolvió bumpeando a v0.1.1 con el fix (`apk add openssl` en el Dockerfile).
+
+## 6. Los packages publicados en GitHub (visibilidad pública)
+
+![packages en ghcr](img/tp2-06-packages-ghcr.png)
+
+Vista de https://github.com/LorenzoGalaverna?tab=packages con los dos packages: `habit-tracker-backend` y `habit-tracker-frontend`. Ambos con badge **Public** — la prueba definitiva de que la advertencia de la guía §3.7 ("los packages de ghcr nacen privados y hay que hacerlos públicos manualmente") se aplicó a los dos, no solo a uno.
+
+## 7. La app funcionando en el navegador
+
+![app en el browser](img/tp2-07-app-browser.png)
+
+`http://localhost:3000` servido por el nginx del contenedor del frontend, que a su vez proxea `/api/*` al backend por el nombre `backend` en la red interna de compose. Se ven la tarjeta de usuario con nivel y barra de XP, los hábitos con botón "Completar" (deshabilitado si `completedToday`), y el formulario para agregar. Esta pantalla es lo mínimo del walking skeleton — las otras dos (Mis hábitos / Bosses) llegan cuando los TPs siguientes empiecen a pedir tests y features.
