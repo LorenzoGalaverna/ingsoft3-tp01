@@ -1,0 +1,14 @@
+# Esqueleto del workflow de CI — TP3.
+# Alcance de esta versión: que exista y que se dispare en cada PR a `main`.
+# El contenido real (build + tests + coverage + gates) se agrega en TP4/TP5.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
