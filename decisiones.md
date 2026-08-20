@@ -296,3 +296,92 @@ Mismo criterio que en el TP1: **ninguna afirmación del agente sobre el estado r
 
 Esa última fila es específica del semver: publicar dos tags a propósito y probar que uno rompe y el otro no es la prueba concreta de que la disciplina de versionado sirve para algo — no es decorativa.
 
+---
+---
+
+# TP3 — Planificación DevOps
+
+**URL del Project (público)**: https://github.com/users/LorenzoGalaverna/projects/1
+
+En este TP no hay `evidencias.md`: el Project es público y quien corrige abre la URL y ve la jerarquía, el sprint, el WIP limit y el PR que cerró la tarea. Estas decisiones justifican los tres números que sí elegí yo.
+
+---
+
+## 1. Duración del sprint: **1 semana**
+
+Alineado con el ritmo de la materia: **1 clase = 1 TP**, y a partir del TP2 cada TP es una capa concreta sobre la app del semestre. Un sprint de una semana calza exactamente con la unidad de entrega que ya existe (el TP semanal) — sprint = TP. Alternativas que descarté:
+
+- **2 semanas** (default clásico de la industria) — más aire por historia, pero desalineado con el calendario semanal de la cursada: cerraría a mitad de un TP y arrancaría otro con dos capas mezcladas. Perdería la propiedad más útil del sprint semanal: **cada review cae encima de un checkpoint real de la materia** (el TP entregado).
+- **3 semanas** — cubriría TP3+TP4 aproximadamente, sirve para planificar el bloque P1 completo. Pero eso ya lo hace la épica (el "objetivo del semestre"): duplicar el mismo horizonte en el sprint diluye el foco de corto plazo, que es exactamente para lo que existe el sprint.
+
+**Cómo lo pienso defender**: la duración del sprint no tiene "número correcto" — tiene que ser **la unidad más chica en la que el equipo entrega algo verificable**. Acá esa unidad es la clase semanal. En un equipo de producto con release quincenal, dos semanas. En un equipo de infra con canary continuo, quizá una.
+
+---
+
+## 2. Límite de trabajo en progreso: **2**
+
+Regla de la guía §3.3: **cantidad de personas + 1**. Trabajando solo, WIP = 2. El "+1" es la válvula para cuando algo queda esperando (una review, una respuesta, la ejecución de un pipeline) y necesitás mover otra cosa para no quedar parado. Sin el "+1" el WIP se vuelve un candado que penaliza los tiempos de espera legítimos; con más de "+1" el límite deja de limitar y el board se llena de cosas empezadas y no terminadas — que es exactamente lo que un WIP limit existe para evitar.
+
+Alternativas que descarté:
+
+- **WIP = 1** ("terminar antes de empezar" al extremo): teórico bonito, práctico frustrante. Si el `docker compose up -d` está corriendo tests durante 3 minutos, no podés arrancar a leer el próximo issue sin infringir el límite. En la práctica se termina rompiendo el límite y perdiendo la disciplina; mejor tener un número que puedas respetar y ajustar con datos.
+- **WIP = 3+**: dejo margen para paralelizar, pero pierdo la señal. Con 3 tarjetas simultáneas nunca voy a **alcanzar** el límite, y la regla de la guía dice literalmente: *"si nunca lo alcanzás, está demasiado alto"*. Un límite que nunca aprieta no está limitando.
+
+**Cómo lo pienso defender**: el WIP es un **experimento**, no un dogma. Empiezo en 2 (personas + 1); si veo que **nunca lo alcanzo**, bajo a 1 y muevo la "válvula de espera" a otro mecanismo (columna Waiting explícita). Si veo que lo alcanzo cada semana y termino postergando cosas urgentes por eso, subo a 3 y anoto el motivo. La respuesta correcta acá **no es el número**: es tener criterio para moverlo con datos.
+
+---
+
+## 3. Diagnóstico de la historia mal escrita
+
+La historia del ejercicio de §3.2 es *"Como desarrollador quiero crear la tabla usuarios para guardar los datos"*.
+
+**Qué tiene de malo, en un renglón**: es una **tarea disfrazada de historia** — el rol ("como desarrollador") y el beneficio ("para guardar los datos") describen implementación técnica, no valor observable por alguien; ningún usuario ni cliente **quiere** una tabla, quiere lo que la tabla habilita.
+
+**Cómo la reescribiría**: subiendo el nivel al valor real. Ejemplo: *"Como visitante quiero registrarme con mi email para poder guardar mi progreso entre sesiones"*. Ahora se ve el rol de verdad (usuario final, no desarrollador), la capacidad observable (registrarse), el beneficio (mantener progreso), y **cae natural una tabla `users` como tarea técnica hija** — junto con el endpoint, la validación de email, la vista de registro. La regla mental: si el "para" describe cómo lo hacés en vez de qué le da al usuario, es tarea, no historia.
+
+---
+
+## 4. Problemas encontrados y cómo los resolví
+
+### a) `gh 2.88` no tiene `--add-sub-issue` (la guía asume 2.94+)
+
+La guía sugiere `gh issue edit <epica> --add-sub-issue <historia>` para armar la jerarquía. Mi `gh --version` era **2.88.1**; el flag apareció en **2.94** (junio 2026). En vez de actualizar gh solo para tres comandos, usé la API REST directa: `POST /repos/{owner}/{repo}/issues/{parent}/sub_issues` con header `X-GitHub-Api-Version: 2022-11-28`.
+
+**Gotcha adicional**: la primera vuelta pasé el `sub_issue_id` con `-f` (string) y devolvió `422 Invalid property /sub_issue_id: "..." is not of type integer`. Se resuelve con `-F` (integer). Documentado en el request, fácil de pasar por alto.
+
+### b) La creación del campo Iteration no se puede hacer por CLI
+
+`createProjectV2Field` de la API GraphQL solo acepta `TEXT / NUMBER / DATE / SINGLE_SELECT` — no `ITERATION`. Los iteration fields requieren configuración adicional (fecha de inicio, duración, iteraciones generadas hacia adelante) y solo se crean via web. La **asignación** de items a un sprint sí se puede hacer por GraphQL (`updateProjectV2ItemFieldValue` con `iterationId`), y así lo hice.
+
+Lo mismo pasa con el WIP limit de la columna: no hay API pública. Es config visual del board view, se hace en la web.
+
+Aprendizaje: los Projects v2 tienen una API GraphQL rica pero incompleta. Para automatizar del todo el setup del board hay que combinar CLI + un par de clicks en la web.
+
+### c) `Closes #N` en la descripción, no en el título
+
+Puse `Closes #8` en el título del PR la primera vez que probé el mecanismo en un scratch; el issue no se cerró al mergear. La guía §3.4 lo avisa en el aviso naranja: `Closes` funciona en el **cuerpo del PR** o en un **mensaje de commit**, no en el título ni en un comentario posterior. Y en la descripción es lo que corresponde para este TP porque además **enlaza el PR al issue en la interfaz** (por commit se cierra igual pero el enlace no queda visible).
+
+### d) La primera vez el issue quedó cerrado pero fuera del Sprint
+
+Al principio la tarea que iba a cerrar el PR estaba sin sprint asignado. Cuando se cerró vía `Closes`, en el Board apareció directo en **Done** — pero fuera del Sprint 1, así que "no salió del sprint" (nunca entró). Lo detecté mirando la lista de items del project: `Status=Done, Sprint=null`. Corregido asignando el sprint **antes** de mergear el PR. Aprendizaje operativo: para que la vuelta plan↔código valga como evidencia, el issue tiene que **estar en el sprint** cuando entra a *In Progress* — no basta con cerrarlo.
+
+---
+
+## 5. Declaración de uso de IA
+
+Igual criterio que en TP1 y TP2. **Delegado**: la ejecución (todos los comandos `gh` / API GraphQL, la creación de los issues, la asignación al sprint, el PR con `Closes #8`, la redacción de esta sección de `decisiones.md`). **No delegado**: los tres números defendibles (duración del sprint, WIP, y el diagnóstico de la historia mal escrita) — cada uno lo decidí yo comparando alternativas contra el contexto real de la cursada, y los tengo que explicar en la defensa.
+
+Verificaciones concretas contra el estado real del Project, no contra el reporte del agente:
+
+| Qué se afirma | Cómo se comprobó |
+|---|---|
+| El Project es público | `gh project view 1 --owner "@me" --format json` → `public: true`. Además el chequeo real: abrí la URL en incógnito y renderiza sin login |
+| La jerarquía es navegable con sub-issues (no task-lists) | `gh api /repos/.../issues/6` devuelve `sub_issues_summary.total = 1`; issue #7 devuelve `parent_issue_url` apuntando a #6 y `sub_issues_summary.total = 2`. Los task-lists no crean estos campos |
+| El bug NO cuelga de la jerarquía | Issue #10 no tiene `parent_issue_url`; su `sub_issues_summary.total = 0`. Está al costado, como pide §3.2 |
+| Historia + 2 tareas asignadas al Sprint 1, épica y bug sin sprint | Query GraphQL a `projectV2.items.fieldValues`: #7/#8/#9 devuelven `title: "Sprint 1"`; #6 y #10 no tienen valor de iteration |
+| El PR cerró la tarea vía `Closes #N` | `gh issue view 8 --json state,closedAt` → `state: CLOSED`. El timeline del issue muestra el PR #11 como "closed via" |
+| El workflow "Item closed → Done" movió la tarjeta | Query GraphQL al item #8 → `Status = Done` — no lo moví a mano |
+| El PR entró por la protección del TP1 (no directo a main) | `gh pr view 11 --json state,mergedBy,baseRefName,mergeCommit` → `state: MERGED`, `baseRefName: main`. El historial de `main` muestra un solo commit squasheado por el PR |
+
+**Cómo lo pienso defender**: la trazabilidad completa se prueba en vivo entrando al issue #8 → ver que su timeline dice "closed by PR #11" → click en el PR → ver el commit `8ed8a6e` que agregó `ci.yml` → ver que ese commit está en `main`. De ahí para arriba: issue #8 → sub-issue de #7 (barra 1/2) → sub-issue de #6 (barra 1/1 aún abierta porque la historia sigue viva). Es exactamente la vuelta que la guía §3.4 pide poder navegar.
+
